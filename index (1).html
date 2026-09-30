@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PHM-3 — Piezo Pump Health Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --chassis:#0a0e13; --panel:#12181f; --inset:#0c1116; --grid:#1d2733;
+    --edge:#2a3644; --text:#dbe2ea; --muted:#66748a; --muted2:#8592a6;
+    --phosphor:#ffb020; --phosphor-dim:#5c4419;
+    --b1:#ff5a5a; --b1-dim:#40201f;
+    --b2:#ffa63d; --b2-dim:#42301a;
+    --b3:#4da8ff; --b3-dim:#1c2f42;
+    --ok:#3ddc7a;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --chassis:#e4e7ec; --panel:#f4f6f8; --inset:#eceff2; --grid:#dbe0e6;
+      --edge:#c7cdd6; --text:#1c232c; --muted:#71798a; --muted2:#4b5566;
+      --phosphor-dim:#ffe4ad; --b1-dim:#ffd9d4; --b2-dim:#ffe4c4; --b3-dim:#d3e8ff;
+    }
+  }
+  *{box-sizing:border-box;}
+  html{scroll-padding-top:env(safe-area-inset-top,0px);}
+  body{
+    margin:0; background:var(--chassis); color:var(--text);
+    font-family:'Archivo',-apple-system,sans-serif;
+    min-height:100%;
+  }
+  .mono{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+  .rig{max-width:980px; margin:0 auto; padding:20px 16px 50px;}
+
+  .chassis-frame{
+    background:var(--panel); border:1px solid var(--edge); border-radius:6px;
+    padding:22px 22px 26px; position:relative;
+  }
+  .screw{position:absolute; width:7px; height:7px; border-radius:50%; background:var(--edge); box-shadow:inset 0 1px 1px rgba(0,0,0,.5), inset 0 -1px 1px rgba(255,255,255,.05);}
+  .screw::after{content:''; position:absolute; top:50%; left:1px; right:1px; height:1px; background:rgba(0,0,0,.5); transform:rotate(35deg);}
+  .s-tl{top:10px; left:10px;} .s-tr{top:10px; right:10px;} .s-bl{bottom:10px; left:10px;} .s-br{bottom:10px; right:10px;}
+
+  header.nameplate{
+    display:flex; justify-content:space-between; align-items:baseline;
+    border-bottom:1px solid var(--edge); padding-bottom:14px; margin-bottom:18px;
+    flex-wrap:wrap; gap:6px;
+  }
+  .brand{font-weight:700; font-size:1.35rem; letter-spacing:.02em;}
+  .brand span{color:var(--phosphor);}
+  .model-line{font-size:.72rem; color:var(--muted); letter-spacing:.06em;}
+  .serial{font-size:.68rem; color:var(--muted2);}
+
+  /* ---- Scope panel ---- */
+  .scope-wrap{
+    background:var(--inset); border:1px solid var(--edge); border-radius:4px;
+    padding:12px 12px 8px; margin-bottom:16px;
+  }
+  .scope-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+  .scope-title{font-size:.7rem; letter-spacing:.08em; color:var(--muted2); font-weight:600;}
+  .scope-readout{font-size:.78rem; color:var(--phosphor);}
+  canvas#scope{width:100%; height:200px; display:block; border-radius:2px;}
+  .scope-legend{display:flex; gap:16px; padding:6px 2px 0; font-size:.68rem; color:var(--muted);}
+  .scope-legend span{display:inline-flex; align-items:center; gap:5px;}
+  .sw{width:9px; height:2px; display:inline-block;}
+
+  /* ---- Controls ---- */
+  .controls{
+    display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+    background:var(--inset); border:1px solid var(--edge); border-radius:4px;
+    padding:14px 16px; margin-bottom:16px;
+  }
+  .freq-block{flex:1; min-width:220px;}
+  .freq-block label{font-size:.68rem; color:var(--muted2); letter-spacing:.06em; display:block; margin-bottom:6px;}
+  .freq-slider-row{display:flex; align-items:center; gap:12px;}
+  input[type=range]{flex:1; accent-color:var(--phosphor); height:4px;}
+  .freq-num{font-size:1.15rem; min-width:78px; text-align:right; color:var(--phosphor);}
+  .freq-num small{color:var(--muted); font-size:.62rem;}
+  .presets{display:flex; gap:6px; flex-wrap:wrap;}
+  .preset-btn{
+    background:var(--panel); color:var(--muted2); border:1px solid var(--edge); border-radius:3px;
+    padding:8px 12px; font-family:'Archivo',sans-serif; font-size:.72rem; font-weight:600;
+    letter-spacing:.03em; cursor:pointer; transition:.15s;
+  }
+  .preset-btn:hover{border-color:var(--muted2); color:var(--text);}
+  .preset-btn.active{background:var(--phosphor-dim); border-color:var(--phosphor); color:var(--phosphor);}
+
+  /* ---- Channels ---- */
+  .channels{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;}
+  @media (max-width:720px){.channels{grid-template-columns:1fr;}}
+  .channel{
+    background:var(--inset); border:1px solid var(--edge); border-radius:4px; padding:12px;
+    border-top:2px solid var(--c);
+  }
+  .ch-head{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;}
+  .ch-name{font-size:.85rem; font-weight:600;}
+  .ch-fault{font-size:.66rem; color:var(--muted); margin-top:2px;}
+  .lamp{width:11px; height:11px; border-radius:50%; background:#232b35; border:1px solid #000; box-shadow:inset 0 1px 1px rgba(0,0,0,.6); margin-top:2px;}
+  .lamp.on{background:var(--c); box-shadow:0 0 8px var(--c), 0 0 2px var(--c);}
+
+  .stage{position:relative; height:52px; background:var(--panel); border:1px solid var(--edge); border-radius:3px; overflow:hidden; margin-bottom:8px;}
+  .clamp{position:absolute; left:0; top:0; bottom:0; width:10px; background:var(--edge);}
+  .beam-bar{position:absolute; left:10px; top:50%; height:4px; width:64%; transform-origin:left center; border-radius:2px; background:var(--c);}
+  .disc{position:absolute; top:50%; width:16px; height:16px; border-radius:50%; transform:translate(-50%,-50%); background:var(--c); opacity:.5;}
+
+  .ch-foot{display:flex; justify-content:space-between; align-items:baseline;}
+  .ch-volt{font-size:1.05rem; color:var(--text);}
+  .ch-volt small{font-size:.62rem; color:var(--muted); margin-left:2px;}
+  .vbar-track{height:4px; background:var(--panel); border:1px solid var(--edge); border-radius:2px; margin-top:6px; overflow:hidden;}
+  .vbar-fill{height:100%; width:0%; background:var(--c); transition:width .1s linear;}
+
+  /* ---- Annunciator ---- */
+  .annunciator{
+    display:flex; align-items:center; gap:14px;
+    background:var(--inset); border:1px solid var(--edge); border-radius:4px;
+    padding:14px 18px; transition:border-color .2s;
+  }
+  .ann-lamp{width:16px; height:16px; border-radius:50%; background:#1a2a20; border:1px solid #000; box-shadow:inset 0 1px 2px rgba(0,0,0,.6); flex:0 0 auto;}
+  .ann-lamp.ok{background:var(--ok); box-shadow:0 0 10px var(--ok);}
+  .ann-lamp.fault{background:var(--fc,var(--b1)); box-shadow:0 0 12px var(--fc,var(--b1));}
+  .ann-text b{font-size:.92rem; display:block;}
+  .ann-text span{font-size:.72rem; color:var(--muted);}
+
+  footer{color:var(--muted); font-size:.68rem; text-align:center; margin-top:16px; letter-spacing:.02em;}
+</style>
+</head>
+<body>
+<div class="rig">
+  <div class="chassis-frame">
+    <div class="screw s-tl"></div><div class="screw s-tr"></div><div class="screw s-bl"></div><div class="screw s-br"></div>
+
+    <header class="nameplate">
+      <div>
+        <div class="brand">PHM-<span>3</span></div>
+        <div class="model-line">TRI-BEAM PIEZOELECTRIC VIBRATION ANALYZER — PUMP FAULT DETECTION</div>
+      </div>
+      <div class="serial mono">SIM MODE · REV 1.0</div>
+    </header>
+
+    <div class="scope-wrap">
+      <div class="scope-head">
+        <div class="scope-title">FREQUENCY RESPONSE — 0–250 Hz</div>
+        <div class="scope-readout mono" id="scopeReadout">f = 8 Hz</div>
+      </div>
+      <canvas id="scope"></canvas>
+      <div class="scope-legend">
+        <span><i class="sw" style="background:var(--b1)"></i>Beam 1 · 50 Hz</span>
+        <span><i class="sw" style="background:var(--b2)"></i>Beam 2 · 100 Hz</span>
+        <span><i class="sw" style="background:var(--b3)"></i>Beam 3 · 200 Hz</span>
+        <span><i class="sw" style="background:var(--phosphor)"></i>Input cursor</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="freq-block">
+        <label>INPUT FREQUENCY</label>
+        <div class="freq-slider-row">
+          <input type="range" id="freqSlider" min="0" max="250" step="1" value="8">
+          <div class="freq-num mono"><span id="freqVal">8</span><small> Hz</small></div>
+        </div>
+      </div>
+      <div class="presets">
+        <button class="preset-btn active" id="btnNormal">Normal</button>
+        <button class="preset-btn" id="btnDry">Dry Run</button>
+        <button class="preset-btn" id="btnBearing">Bearing</button>
+        <button class="preset-btn" id="btnImbalance">Imbalance</button>
+        <button class="preset-btn" id="btnSweep">▶ Sweep</button>
+      </div>
+    </div>
+
+    <div class="channels">
+      <div class="channel" style="--c:var(--b1)">
+        <div class="ch-head"><div><div class="ch-name">CH 1 — Beam 1</div><div class="ch-fault">Dry Run / Cavitation</div></div><div class="lamp" id="lamp1"></div></div>
+        <div class="stage"><div class="clamp"></div><div class="beam-bar" id="bar1"></div><div class="disc" id="disc1"></div></div>
+        <div class="ch-foot"><div class="ch-volt mono"><span id="v1">0.00</span><small>V</small></div><div class="mono" style="font-size:.62rem;color:var(--muted)">50 Hz</div></div>
+        <div class="vbar-track"><div class="vbar-fill" id="vf1"></div></div>
+      </div>
+      <div class="channel" style="--c:var(--b2)">
+        <div class="ch-head"><div><div class="ch-name">CH 2 — Beam 2</div><div class="ch-fault">Bearing Wear</div></div><div class="lamp" id="lamp2"></div></div>
+        <div class="stage"><div class="clamp"></div><div class="beam-bar" id="bar2"></div><div class="disc" id="disc2"></div></div>
+        <div class="ch-foot"><div class="ch-volt mono"><span id="v2">0.00</span><small>V</small></div><div class="mono" style="font-size:.62rem;color:var(--muted)">100 Hz</div></div>
+        <div class="vbar-track"><div class="vbar-fill" id="vf2"></div></div>
+      </div>
+      <div class="channel" style="--c:var(--b3)">
+        <div class="ch-head"><div><div class="ch-name">CH 3 — Beam 3</div><div class="ch-fault">Imbalance / Erosion</div></div><div class="lamp" id="lamp3"></div></div>
+        <div class="stage"><div class="clamp"></div><div class="beam-bar" id="bar3"></div><div class="disc" id="disc3"></div></div>
+        <div class="ch-foot"><div class="ch-volt mono"><span id="v3">0.00</span><small>V</small></div><div class="mono" style="font-size:.62rem;color:var(--muted)">200 Hz</div></div>
+        <div class="vbar-track"><div class="vbar-fill" id="vf3"></div></div>
+      </div>
+    </div>
+
+    <div class="annunciator" id="annBox">
+      <div class="ann-lamp ok" id="annLamp"></div>
+      <div class="ann-text">
+        <b id="annText">Pump Normal — No Fault Detected</b>
+        <span id="annSub">All channels below 2.5 V threshold</span>
+      </div>
+    </div>
+  </div>
+  <footer>Schematic simulation — resonance curves are modeled, not measured. Threshold 2.5 V, within the 1–5 V AC spec range per disc.</footer>
+</div>
+
+<script>
+(function(){
+  const beams = [
+    {f0:50,  Q:9,  color:getVar('--b1'), name:'Dry Run / Cavitation', el:1},
+    {f0:100, Q:9,  color:getVar('--b2'), name:'Bearing Wear', el:2},
+    {f0:200, Q:10, color:getVar('--b3'), name:'Imbalance / Erosion', el:3}
+  ];
+  function getVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  const VMAX = 5.0, THRESH = 2.5;
+  const slider = document.getElementById('freqSlider');
+  const freqVal = document.getElementById('freqVal');
+  const scopeReadout = document.getElementById('scopeReadout');
+  const annLamp = document.getElementById('annLamp');
+  const annText = document.getElementById('annText');
+  const annSub = document.getElementById('annSub');
+  const annBox = document.getElementById('annBox');
+  let sweeping = false, sweepStart = 0;
+  const SWEEP_DURATION = 7000;
+
+  function resonance(f, f0, Q){
+    const r = f / f0;
+    const denom = Math.sqrt(Math.pow(1 - r*r, 2) + Math.pow(r / Q, 2));
+    return 1 / denom;
+  }
+  function normResponse(f, b){
+    const peak = resonance(b.f0, b.f0, b.Q);
+    return Math.min(resonance(f, b.f0, b.Q) / peak, 1.15);
+  }
+
+  // ---- Scope canvas setup ----
+  const canvas = document.getElementById('scope');
+  const ctx = canvas.getContext('2d');
+  function fitCanvas(){
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  fitCanvas();
+  window.addEventListener('resize', fitCanvas);
+
+  function drawScope(freq){
+    const rect = canvas.getBoundingClientRect();
+    const W = rect.width, H = rect.height;
+    const inset = getComputedStyle(document.documentElement).getPropertyValue('--inset').trim();
+    const grid = getComputedStyle(document.documentElement).getPropertyValue('--grid').trim();
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = inset;
+    ctx.fillRect(0,0,W,H);
+
+    // grid
+    ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    for(let x=0; x<=250; x+=25){
+      const px = (x/250)*W;
+      ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,H); ctx.stroke();
+    }
+    for(let i=0;i<=4;i++){
+      const py = H - (i/4)*H;
+      ctx.beginPath(); ctx.moveTo(0,py); ctx.lineTo(W,py); ctx.stroke();
+    }
+
+    // curves
+    beams.forEach(b=>{
+      ctx.beginPath();
+      for(let x=0; x<=250; x++){
+        const amp = normResponse(x, b);
+        const px = (x/250)*W;
+        const py = H - Math.min(amp,1)*H*0.92 - 4;
+        if(x===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.strokeStyle = b.color; ctx.lineWidth = 1.6; ctx.stroke();
+    });
+
+    // threshold line
+    const threshY = H - (THRESH/VMAX)*H*0.92 - 4;
+    ctx.strokeStyle = 'rgba(255,176,32,0.35)'; ctx.setLineDash([4,3]); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(0,threshY); ctx.lineTo(W,threshY); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // cursor
+    const cx = (freq/250)*W;
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--phosphor').trim();
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.stroke();
+
+    beams.forEach(b=>{
+      const amp = normResponse(freq, b);
+      const py = H - Math.min(amp,1)*H*0.92 - 4;
+      ctx.beginPath();
+      ctx.arc(cx, py, 3, 0, Math.PI*2);
+      ctx.fillStyle = b.color;
+      ctx.fill();
+    });
+  }
+
+  let t0 = performance.now();
+  function frame(now){
+    const f = parseFloat(slider.value);
+    freqVal.textContent = f.toFixed(0);
+    scopeReadout.textContent = 'f = ' + f.toFixed(0) + ' Hz';
+    const elapsed = (now - t0) / 1000;
+    let activeFault = null, maxV = 0;
+
+    drawScope(f);
+
+    beams.forEach((b) => {
+      const idx = b.el;
+      const norm = normResponse(f, b);
+      const voltage = Math.min(norm * VMAX, VMAX*1.05);
+
+      const bar = document.getElementById('bar'+idx);
+      const disc = document.getElementById('disc'+idx);
+      const vibPx = Math.min(norm,1) * 11;
+      const wobble = Math.sin(elapsed * (b.f0/6 + 2)) * vibPx;
+      bar.style.transform = `translateY(${wobble.toFixed(1)}px) rotate(${(wobble*0.3).toFixed(1)}deg)`;
+      const tipX = 10 + bar.clientWidth;
+      disc.style.left = tipX + 'px';
+      disc.style.transform = `translate(-50%, calc(-50% + ${wobble.toFixed(1)}px))`;
+      const glow = Math.min(norm,1);
+      disc.style.opacity = 0.45 + glow*0.55;
+      disc.style.boxShadow = glow>0.15 ? `0 0 ${6+glow*10}px ${b.color}` : 'none';
+
+      document.getElementById('v'+idx).textContent = voltage.toFixed(2);
+      document.getElementById('vf'+idx).style.width = Math.min(voltage/VMAX,1)*100 + '%';
+      document.getElementById('lamp'+idx).classList.toggle('on', voltage > THRESH);
+
+      if (voltage > THRESH && voltage > maxV){ maxV = voltage; activeFault = b; }
+    });
+
+    if (activeFault){
+      annLamp.classList.remove('ok'); annLamp.classList.add('fault');
+      annBox.style.setProperty('--fc', activeFault.color);
+      annBox.style.borderColor = activeFault.color;
+      annText.textContent = 'Fault Detected: ' + activeFault.name;
+      annSub.textContent = `Channel ${activeFault.el} (${activeFault.f0} Hz) exceeded 2.5 V threshold`;
+    } else {
+      annLamp.classList.add('ok'); annLamp.classList.remove('fault');
+      annBox.style.borderColor = 'var(--edge)';
+      annText.textContent = 'Pump Normal — No Fault Detected';
+      annSub.textContent = 'All channels below 2.5 V threshold';
+    }
+
+    if (sweeping){
+      const p = ((now - sweepStart) % SWEEP_DURATION) / SWEEP_DURATION;
+      slider.value = Math.round(p*250);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  function setActive(id){
+    document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'));
+    if(id) document.getElementById(id).classList.add('active');
+  }
+  document.getElementById('btnNormal').onclick=()=>{sweeping=false; slider.value=8; setActive('btnNormal');};
+  document.getElementById('btnDry').onclick=()=>{sweeping=false; slider.value=50; setActive('btnDry');};
+  document.getElementById('btnBearing').onclick=()=>{sweeping=false; slider.value=100; setActive('btnBearing');};
+  document.getElementById('btnImbalance').onclick=()=>{sweeping=false; slider.value=200; setActive('btnImbalance');};
+  document.getElementById('btnSweep').onclick=()=>{ sweeping=!sweeping; sweepStart=performance.now(); setActive(sweeping?'btnSweep':'btnNormal'); };
+  slider.addEventListener('input', ()=>{ sweeping=false; setActive(null); });
+})();
+</script>
+</body>
+</html>
